@@ -27,11 +27,7 @@ sudo systemctl status httpd.service
 sudo mkdir /var/www/html/wordpress
 sudo mount -t nfs4 -o nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2,noresvport ${fs_name}.efs.eu-central-1.amazonaws.com:/ /var/www/html/wordpress
 
-curl https://wordpress.org/latest.tar.gz --output wordpress.tar.gz
-tar xf wordpress.tar.gz
-cp -r wordpress /var/www/html
 
-chown -R apache:apache /var/www/html
 
 cat <<EOF > /etc/httpd/conf.d/wordpress.conf
 <VirtualHost *:80>
@@ -47,7 +43,7 @@ ErrorLog /var/log/httpd/wordpress_error.log
 CustomLog /var/log/httpd/wordpress_access.log common
 </VirtualHost>
 EOF
-
+chown -R apache:apache /var/www/html
 
 systemctl restart httpd
 

@@ -7,6 +7,40 @@ data "aws_region" "current" {}
 data "aws_vpcs" "my_vpcs" {}
 
 
+
+resource "aws_default_vpc" "default" {
+  tags = {
+    Name = "Default VPC"
+  }
+}
+
+
+
+resource "aws_default_subnet" "default_az0" {
+  availability_zone = data.aws_availability_zones.working.names[0]
+
+  tags = {
+    Name = "Default subnet for eu-central-1a"
+  }
+}
+
+resource "aws_default_subnet" "default_az1" {
+  availability_zone = data.aws_availability_zones.working.names[1]
+
+  tags = {
+    Name = "Default subnet for eu-central-1b"
+  }
+}
+
+resource "aws_default_subnet" "default_az2" {
+  availability_zone = data.aws_availability_zones.working.names[2]
+
+  tags = {
+    Name = "Default subnet for eu-central-1c"
+  }
+}
+
+
 resource "aws_vpc" "prod-10" {
   cidr_block = "10.10.0.0/16"
 
@@ -125,6 +159,27 @@ resource "aws_security_group" "apache" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
+ingress {
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    from_port   = 2049
+    to_port     = 2049
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    from_port   = 3306
+    to_port     = 3306
+    protocol    = "tcp"
+    cidr_blocks = [aws_default_vpc.default.cidr_block]
+  }
+
   egress {
     from_port   = 0
     to_port     = 0
@@ -139,14 +194,56 @@ resource "aws_security_group" "apache" {
 }
 
 
+resource "aws_db_instance" "mysqldb" {
+  allocated_storage    = 20
+  engine               = "mysql"
+  engine_version       = "8.0.20"
+  instance_class       = "db.t2.micro"
+  name                 = "mysqldb"
+  identifier           = "mysqldb"
+  identifier_prefix    = null
+#  id                   = "mysqldb"
+  multi_az             = false
+  port                 = 3306
+  storage_encrypted    = false
+  skip_final_snapshot  = true
+  snapshot_identifier  = null
+  username             = "wordpress"
+  password             = "Ber1Serk"
+  parameter_group_name = "default.mysql8.0"
+  db_subnet_group_name = "for-db"
+  vpc_security_group_ids = [
+    aws_security_group.apache.id
+  ]
+}
+
+
+resource "aws_db_subnet_group" "for-db" {
+  name                 = "for-db"
+  description          = "Subnet for DB"
+#  id                   = "for-db"
+  subnet_ids = [aws_default_subnet.default_az0.id,
+                aws_default_subnet.default_az1.id,
+                aws_default_subnet.default_az2.id
+               ]
+  tags = {
+    Name = "My DB subnet group"
+  }
+
+}
+
+
 resource "aws_instance" "my_redhut" {
   ami                    = data.aws_ami.latest_RHEL.id
   instance_type          = "t2.micro"
+  key_name               = aws_key_pair.deployer.id
   vpc_security_group_ids = [aws_security_group.apache.id]
   availability_zone      = data.aws_availability_zones.working.names[0]
   user_data              = templatefile("httpd_script.tpl", {
-    f_name = "Abra",
-    l_name = "Kadabra",
+    f_name  = "Abra",
+    l_name  = "Kadabra",
+    fs_name = aws_efs_file_system.my_efs.id,
+
   })
 
   tags = {
@@ -154,17 +251,20 @@ resource "aws_instance" "my_redhut" {
     Owner   = "Andrei Shtanakov"
     Project = "Terraform habdled"
   }
+  depends_on = [aws_efs_file_system.my_efs]
 }
 
 
 resource "aws_instance" "my_redhut2" {
   ami                    = data.aws_ami.latest_RHEL.id
   instance_type          = "t2.micro"
+  key_name               = aws_key_pair.deployer.id
   vpc_security_group_ids = [aws_security_group.apache.id]
   availability_zone      = data.aws_availability_zones.working.names[1]
-  user_data              = templatefile("httpd_script.tpl", {
-    f_name = "Abra",
-    l_name = "Kadabra",
+  user_data              = templatefile("httpd_script1.tpl", {
+    f_name  = "Abra",
+    l_name  = "Kadabra",
+    fs_name = aws_efs_file_system.my_efs.id,
   })
 
   tags = {
@@ -172,6 +272,81 @@ resource "aws_instance" "my_redhut2" {
     Owner   = "Andrei Shtanakov"
     Project = "Terraform habdled"
   }
+  depends_on = [aws_efs_file_system.my_efs]
 }
 
+
+
+resource "aws_default_subnet" "default_az-a" {
+  availability_zone =  data.aws_availability_zones.working.names[0]
+
+  tags = {
+    Name = "Default subnet a"
+  }
+}
+
+resource "aws_default_subnet" "default_az-b" {
+  availability_zone =  data.aws_availability_zones.working.names[1]
+
+  tags = {
+    Name = "Default subnet b"
+  }
+}
+
+
+
+
+resource "aws_efs_file_system" "my_efs" {
+  # (resource arguments)
+  creation_token = "my-product"
+
+  tags = {
+    Name = "MyProduct"
+  }
+}
+resource "aws_efs_access_point" "test" {
+  file_system_id = aws_efs_file_system.my_efs.id
+}
+
+resource "aws_efs_mount_target" "primary" {
+  file_system_id  = aws_efs_file_system.my_efs.id
+  subnet_id       = aws_default_subnet.default_az-a.id
+  security_groups = [aws_security_group.apache.id]
+}
+
+resource "aws_efs_mount_target" "secondary" {
+  file_system_id  = aws_efs_file_system.my_efs.id
+  subnet_id       = aws_default_subnet.default_az-b.id
+  security_groups = [aws_security_group.apache.id]
+
+}
+
+
+
+
+output "vps_cidr_block" {
+  
+  value = aws_default_vpc.default.cidr_block
+}
+
+
+
+
+output "subnet_cidr_blocks-a" {
+  value = aws_default_subnet.default_az-a.cidr_block
+}
+
+output "subnet_cidr_blocks-b" {
+  value = aws_default_subnet.default_az-b.cidr_block
+}
+
+
+resource "aws_key_pair" "deployer" {
+  key_name   = "deployer-key"
+  public_key = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDAccnhhq6Jaoe99qLP1hgUP9O2mrVFmmpYEZouY7VNjcTVdkZihj7LBP/4niODLFIUH+E7iYS89dnB6xtS9T8BXsiHChk6K3K2HlI6vObd8i5kKMgtSP9bGarW9Fuq+3S/VHQP94JSBDKcCm2TqgvQZcmd6sgeN4optp3WpAWMR56HJbZqTyrNr2tIOYvm0LBq0QlGNyFyxuXpKTEDHzpGhiaHZl+5e+MWxtshR13rnCTirHYl+fSCAr3r+dNcukBr8UZdWQ6FEW8DJWs3c5116YoFU6d1Rp9FV/yLTmUOo/gU/xcy6f6h0W0gprBW8tLdSVsb2niP0NrBB9ZKo0FH user@epam2"
+}
+
+output "aws_vpcs" {
+  value = data.aws_vpcs.my_vpcs.id
+}
 
