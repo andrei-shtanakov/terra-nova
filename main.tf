@@ -141,6 +141,15 @@ data "aws_ami" "latest_RHEL" {
   }
 }
 
+data "aws_ami" "latest_ubuntu" {
+  owners      = ["099720109477"]
+  most_recent = true
+  filter {
+    name   = "name"
+    values = ["ubuntu/images/hvm-ssd/ubuntu-focal-20.04-amd64-server-*"]
+  }
+}
+
 resource "aws_security_group" "apache" {
   name        = "WWW Security Group"
   description = "Open ports for Websever"
@@ -199,7 +208,7 @@ resource "aws_db_instance" "mysqldb" {
   engine               = "mysql"
   engine_version       = "8.0.20"
   instance_class       = "db.t2.micro"
-  name                 = "mysqldb"
+  name                 = "wordpress"
   identifier           = "mysqldb"
   identifier_prefix    = null
 #  id                   = "mysqldb"
@@ -208,8 +217,8 @@ resource "aws_db_instance" "mysqldb" {
   storage_encrypted    = false
   skip_final_snapshot  = true
   snapshot_identifier  = null
-  username             = "wordpress"
-  password             = "Ber1Serk"
+  username             = "wordpressuser"
+  password             = "12345678"
   parameter_group_name = "default.mysql8.0"
   db_subnet_group_name = "for-db"
   vpc_security_group_ids = [
@@ -233,17 +242,16 @@ resource "aws_db_subnet_group" "for-db" {
 }
 
 
-resource "aws_instance" "my_redhut" {
-  ami                    = data.aws_ami.latest_RHEL.id
+resource "aws_instance" "my_ubuntu" {
+  ami                    = data.aws_ami.latest_ubuntu.id
   instance_type          = "t2.micro"
   key_name               = aws_key_pair.deployer.id
   vpc_security_group_ids = [aws_security_group.apache.id]
   availability_zone      = data.aws_availability_zones.working.names[0]
-  user_data              = templatefile("httpd_script.tpl", {
-    f_name  = "Abra",
-    l_name  = "Kadabra",
-    fs_name = aws_efs_file_system.my_efs.id,
-
+  user_data              = templatefile("apache_script.tpl", {
+    fs_name              = aws_efs_file_system.my_efs.id,
+    db_address           = aws_db_instance.mysqldb.address,
+ 
   })
 
   tags = {
@@ -255,16 +263,15 @@ resource "aws_instance" "my_redhut" {
 }
 
 
-resource "aws_instance" "my_redhut2" {
-  ami                    = data.aws_ami.latest_RHEL.id
+resource "aws_instance" "my_ubuntu2" {
+  ami                    = data.aws_ami.latest_ubuntu.id
   instance_type          = "t2.micro"
   key_name               = aws_key_pair.deployer.id
   vpc_security_group_ids = [aws_security_group.apache.id]
   availability_zone      = data.aws_availability_zones.working.names[1]
-  user_data              = templatefile("httpd_script1.tpl", {
-    f_name  = "Abra",
-    l_name  = "Kadabra",
-    fs_name = aws_efs_file_system.my_efs.id,
+  user_data              = templatefile("apache_script.tpl", {
+    fs_name              = aws_efs_file_system.my_efs.id,
+    db_address           = aws_db_instance.mysqldb.address,
   })
 
   tags = {
@@ -342,7 +349,7 @@ output "subnet_cidr_blocks-b" {
 
 
 resource "aws_key_pair" "deployer" {
-  key_name   = "deployer-key"
+  key_name   = "deployer_key"
   public_key = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDAccnhhq6Jaoe99qLP1hgUP9O2mrVFmmpYEZouY7VNjcTVdkZihj7LBP/4niODLFIUH+E7iYS89dnB6xtS9T8BXsiHChk6K3K2HlI6vObd8i5kKMgtSP9bGarW9Fuq+3S/VHQP94JSBDKcCm2TqgvQZcmd6sgeN4optp3WpAWMR56HJbZqTyrNr2tIOYvm0LBq0QlGNyFyxuXpKTEDHzpGhiaHZl+5e+MWxtshR13rnCTirHYl+fSCAr3r+dNcukBr8UZdWQ6FEW8DJWs3c5116YoFU6d1Rp9FV/yLTmUOo/gU/xcy6f6h0W0gprBW8tLdSVsb2niP0NrBB9ZKo0FH user@epam2"
 }
 
@@ -350,3 +357,6 @@ output "aws_vpcs" {
   value = data.aws_vpcs.my_vpcs.id
 }
 
+output "db_name_dns" {
+  value = aws_db_instance.mysqldb.address
+}

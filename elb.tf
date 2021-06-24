@@ -22,7 +22,7 @@ resource "aws_elb" "elb" {
     interval            = 30
   }
 
-  instances                   = [aws_instance.my_redhut.id, aws_instance.my_redhut2.id]
+  instances                   = [aws_instance.my_ubuntu.id, aws_instance.my_ubuntu2.id]
   cross_zone_load_balancing   = true
   idle_timeout                = 400
   connection_draining         = true
